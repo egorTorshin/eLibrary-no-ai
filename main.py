@@ -16,15 +16,19 @@ class User(BaseModel):
     oauth_id: int
     email: str | None = None
     username: str
-    role_id: str = "user"
+    role_id: int = 1
 
 class Token(BaseModel):
     access_token: str
     token_type: str
 
-
 class TokenData(BaseModel):
-    username: str | None = None
+    user_id: int
+    role_id: int
+
+class Item(BaseModel):
+    user_id: int
+    role_id: int
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -51,27 +55,30 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
+        user_id = payload.get("user_id")
+        role_id = payload.get("role_id")
+        if user_id is None or role_id is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
+        token_data = TokenData(user_id=user_id, role_id=role_id)
     except InvalidTokenError:
         raise credentials_exception
-    user = get_user(fake_users_db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
+    return token_data
 
 
-async def require_admin(token: Annotated[str, Depends(oauth2_scheme)]):
+async def require_admin(token_data: Annotated[TokenData, Depends(get_current_user)]):
     role_exception = HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You should be admin",
     )
-    try:
-        current_user = get_current_user(token)
-        if current_user.role_id == "user":
-            raise role_exception
-    except InvalidTokenError:
+  
+    if token_data.role_id == 2:
+        return "OK"
+    else:
         raise role_exception
 
+
+@app.post("/debug/token")
+async def auth_test(item: Item):
+    access_token = create_access_token(item.model_dump())
+
+    return access_token
